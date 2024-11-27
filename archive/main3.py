@@ -1,6 +1,6 @@
 # main.py
 from aiohttp import web
-import json, asyncio
+import json
 from datetime import datetime
 
 html_template = """
@@ -17,34 +17,39 @@ html_template = """
            this.logs = [];
            this.init();
        }
-       
+
        async init() {
            this.log('Node initialized');
            this.replicate();
            this.setupStatus();
        }
-       
+
        async replicate() {
-           try {
-               // Create hidden iframe
-               const iframe = document.createElement('iframe'); 
-               iframe.style.display = 'none';
-               iframe.srcdoc = document.documentElement.outerHTML;
-               document.body.appendChild(iframe);
-               
-               // Post to parent that we're ready to spread
-               await fetch('/ready', {
-                   method: 'POST',
-                   headers: {'Content-Type': 'application/json'},
-                   body: JSON.stringify({url: window.location.href})
-               });
-               
-               this.log('Replication successful');
-           } catch(e) {
-               this.log('Replication failed: ' + e.message);
+           // Hidden iframe replication
+           const iframe = document.createElement('iframe');
+           iframe.style.display = 'none';
+           iframe.srcdoc = document.documentElement.outerHTML;
+           document.body.appendChild(iframe);
+           
+           this.log('Replicated');
+           
+           // Attempt to spread
+           this.spread();
+       }
+
+       async spread() {
+           const ports = [8080, 8081, 8082, 8083];
+           for(let port of ports) {
+               try {
+                   const url = `http://localhost:${port}/spread`;
+                   await fetch(url);
+                   this.log(`Spread to ${url}`);
+               } catch(e) {
+                   console.log(e);
+               }
            }
        }
-       
+
        log(msg) {
            this.logs.push({
                time: new Date().toISOString(),
@@ -52,21 +57,20 @@ html_template = """
            });
            this.updateStatus();
        }
-       
+
        setupStatus() {
            setInterval(() => this.updateStatus(), 1000);
        }
-       
+
        updateStatus() {
            const status = document.getElementById('status');
            status.innerHTML = `
                <h3>Node Status</h3>
                <p>Logs: ${this.logs.length}</p>
-               <p>Latest: ${this.logs[this.logs.length-1]?.message || 'None'}</p>
            `;
        }
    }
-   
+
    new Node();
    </script>
 </body>
@@ -76,23 +80,17 @@ html_template = """
 class Server:
    def __init__(self):
        self.logs = []
-       self.nodes = set()
 
    async def handle(self, request):
        self.log_access(request)
        return web.Response(text=html_template, content_type='text/html')
 
-   async def ready(self, request):
-       data = await request.json()
-       self.nodes.add(data['url'])
-       self.log_access(request, 'ready')
-       return web.Response(text='OK')
+   async def spread(self, request):
+       self.log_access(request, 'spread')
+       return web.Response(text='Spread')
 
    async def get_logs(self, request):
-       return web.json_response({
-           'logs': self.logs,
-           'nodes': list(self.nodes)
-       })
+       return web.json_response(self.logs)
 
    def log_access(self, request, type='visit'):
        self.logs.append({
@@ -104,7 +102,7 @@ class Server:
 app = web.Application()
 server = Server()
 app.router.add_get('/', server.handle)
-app.router.add_post('/ready', server.ready)
+app.router.add_get('/spread', server.spread)
 app.router.add_get('/logs', server.get_logs)
 
 if __name__ == '__main__':
