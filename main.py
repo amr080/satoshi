@@ -6,7 +6,6 @@ import json
 import os
 from datetime import datetime
 
-# Configure logging to stdout for DigitalOcean capture
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -29,8 +28,7 @@ if __name__ == '__main__':
     web.run_app(app, host='0.0.0.0', port=8080)
 """
 
-# Compress the replication code once at startup with faster compression
-compressed_payload = zlib.compress(replication_code, level=1)  # level 1 for speed
+compressed_payload = zlib.compress(replication_code, level=1)
 
 async def handle(request):
     """Send the compressed replication code to client"""
@@ -42,7 +40,6 @@ async def handle(request):
 async def health(request):
     return web.Response(text='OK')
 
-# Middleware for logging
 @web.middleware
 async def metrics_middleware(request, handler):
     start = datetime.utcnow()
@@ -56,11 +53,7 @@ async def metrics_middleware(request, handler):
     }))
     return response
 
-# Initialize the web application with optimized settings
-app = web.Application(
-    client_max_size=10**7,  # 10 MB
-    keepalive_timeout=75
-)
+app = web.Application()
 app.router.add_get('/', handle)
 app.router.add_get('/health', health)
 app.middlewares.append(metrics_middleware)
@@ -68,8 +61,7 @@ app.middlewares.append(metrics_middleware)
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     web.run_app(
-        app, 
-        host='0.0.0.0', 
-        port=port, 
-        access_log_format='%t %a "%r" %s %b "%{User-Agent}i" %D'
+        app,
+        host='0.0.0.0',
+        port=port
     )
