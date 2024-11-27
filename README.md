@@ -17,3 +17,6 @@ How does independence work?
 - Client can decode and run the received code
 - Each new instance becomes its own server
 - This creates a chain of self-replicating servers
+
+Sources
+- [Quine Computing](https://en.wikipedia.org/wiki/Quine_(computing))
