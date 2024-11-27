@@ -43,8 +43,12 @@ async def handle(request):
         }
     )
 
+async def health(request):
+    return web.Response(text="OK", status=200)
+
 app = web.Application(client_max_size=1024**2, keepalive_timeout=75)
 app.router.add_get('/', handle)
+app.router.add_get('/health', health)
 
 @web.middleware
 async def metrics_middleware(request, handler):
@@ -69,6 +73,7 @@ if __name__ == '__main__':
 encoded_q = base64.b85encode(zlib.compress(q.format(q).encode(), level=9))
 
 async def handle(request):
+    logger.info(f"Connection from {request.remote}")
     return web.Response(
         body=encoded_q,
         headers={
@@ -77,8 +82,12 @@ async def handle(request):
         }
     )
 
+async def health(request):
+    return web.Response(text="OK", status=200)
+
 app = web.Application(client_max_size=1024**2, keepalive_timeout=75)
 app.router.add_get('/', handle)
+app.router.add_get('/health', health)
 
 @web.middleware
 async def metrics_middleware(request, handler):
@@ -98,7 +107,8 @@ def run_server(port):
     asyncio.run(async_server(port))
 
 async def async_server(port):
-    server = await web._run_app(app, host='0.0.0.0', port=port, backlog=2048)
+    server = await web.start_app(app, host='0.0.0.0', port=port, backlog=2048)
+    logger.info(f"Serving on port {port}")
     await server
 
 if __name__ == "__main__":
