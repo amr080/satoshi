@@ -3,22 +3,15 @@ import asyncio
 import zlib
 import logging
 from aiohttp import web
-import uvloop
 import os
 import json
 from datetime import datetime
 
-# Install uvloop for faster event loop
-uvloop.install()
-
-# Configure logging
+# Configure logging to stdout for DigitalOcean capture
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("server.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -26,10 +19,15 @@ logger = logging.getLogger(__name__)
 q = """
 import base64, asyncio, zlib, logging
 from aiohttp import web
-import uvloop, os
+import os
+from datetime import datetime
+import json
 
-uvloop.install()
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
 q = {0!r}
@@ -107,9 +105,13 @@ def run_server(port):
     asyncio.run(async_server(port))
 
 async def async_server(port):
-    server = await web.start_app(app, host='0.0.0.0', port=port, backlog=2048)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host='0.0.0.0', port=port, backlog=2048)
     logger.info(f"Serving on port {port}")
-    await server
+    await site.start()
+    while True:
+        await asyncio.sleep(3600)  # Keep running
 
 if __name__ == "__main__":
     cpu_count = os.cpu_count()
