@@ -1,67 +1,56 @@
 # main.py
 from aiohttp import web
-import zlib
-import logging
-import json
-import os
+import zlib, json, logging
 from datetime import datetime
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Self-replicating server code as bytes
+# Store logs in memory
+logs = []
+
 replication_code = b"""
+#!/usr/bin/env python3
 from aiohttp import web
-import zlib
+import zlib, json
+from datetime import datetime
+
+logs = []
 
 async def handle(request):
-    return web.Response(text="I am a replica, running on port 8080")
+   logs.append({"time": datetime.utcnow().isoformat(), "ip": request.remote})
+   return web.Response(body=PAYLOAD, headers={'Content-Type': 'application/python'})
+
+async def health(request):
+   return web.Response(text="OK")
+
+async def get_logs(request):
+   return web.json_response(logs)
 
 app = web.Application()
 app.router.add_get('/', handle)
+app.router.add_get('/health', health) 
+app.router.add_get('/logs', get_logs)
 
 if __name__ == '__main__':
-    web.run_app(app, host='0.0.0.0', port=8080)
+   web.run_app(app, port=8080)
 """
 
-compressed_payload = zlib.compress(replication_code, level=1)
-
 async def handle(request):
-    """Send the compressed replication code to client"""
-    return web.Response(
-        body=compressed_payload,
-        headers={'Content-Type': 'application/octet-stream'}
-    )
+   logs.append({"time": datetime.utcnow().isoformat(), "ip": request.remote})
+   payload = replication_code.replace(b'PAYLOAD', repr(replication_code).encode())
+   return web.Response(body=payload, headers={'Content-Type': 'application/python'})
 
 async def health(request):
-    return web.Response(text='OK')
+   return web.Response(text="OK")
 
-@web.middleware
-async def metrics_middleware(request, handler):
-    start = datetime.utcnow()
-    response = await handler(request)
-    duration = (datetime.utcnow() - start).total_seconds()
-    logger.info(json.dumps({
-        'ip': request.remote,
-        'duration': duration,
-        'status': response.status,
-        'path': request.path
-    }))
-    return response
+async def get_logs(request):
+   return web.json_response(logs)
 
 app = web.Application()
 app.router.add_get('/', handle)
 app.router.add_get('/health', health)
-app.middlewares.append(metrics_middleware)
+app.router.add_get('/logs', get_logs)
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    web.run_app(
-        app,
-        host='0.0.0.0',
-        port=port
-    )
+   web.run_app(app, port=8080)
