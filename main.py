@@ -1,8 +1,12 @@
 # main.py
 from aiohttp import web
-import base64, zlib, logging, json, os
+import zlib
+import logging
+import json
+import os
 from datetime import datetime
 
+# Configure logging to stdout for DigitalOcean capture
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -10,67 +14,62 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Self-replicating server code
-q = """
+# Self-replicating server code as bytes
+replication_code = b"""
 from aiohttp import web
-import base64, zlib, logging, json, os
-from datetime import datetime
-
-q = {0!r}
-encoded_q = base64.b85encode(zlib.compress(q.format(q).encode(), level=9))
+import zlib
 
 async def handle(request):
-    logger.info(json.dumps({{'ip': request.remote, 'type': 'replication_request'}}))
-    return web.Response(
-        body=encoded_q,
-        headers={{
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/octet-stream',
-            'Server': 'Satoshi/1.0'
-        }}
-    )
-
-async def health(request):
-    return web.Response(text='OK')
+    return web.Response(text="I am a replica, running on port 8080")
 
 app = web.Application()
 app.router.add_get('/', handle)
-app.router.add_get('/health', health)
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    web.run_app(app, host='0.0.0.0', port=port)
+    web.run_app(app, host='0.0.0.0', port=8080)
 """
 
-# Pre-compute encoded version
-encoded_q = base64.b85encode(zlib.compress(q.format(q).encode(), level=9))
+# Compress the replication code once at startup with faster compression
+compressed_payload = zlib.compress(replication_code, level=1)  # level 1 for speed
 
 async def handle(request):
-    logger.info(json.dumps({
-        'ip': request.remote,
-        'type': 'replication_request',
-        'timestamp': datetime.utcnow().isoformat()
-    }))
+    """Send the compressed replication code to client"""
     return web.Response(
-        body=encoded_q,
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/octet-stream',
-            'Server': 'Satoshi/1.0'
-        }
+        body=compressed_payload,
+        headers={'Content-Type': 'application/octet-stream'}
     )
 
 async def health(request):
     return web.Response(text='OK')
 
-app = web.Application()
+# Middleware for logging
+@web.middleware
+async def metrics_middleware(request, handler):
+    start = datetime.utcnow()
+    response = await handler(request)
+    duration = (datetime.utcnow() - start).total_seconds()
+    logger.info(json.dumps({
+        'ip': request.remote,
+        'duration': duration,
+        'status': response.status,
+        'path': request.path
+    }))
+    return response
+
+# Initialize the web application with optimized settings
+app = web.Application(
+    client_max_size=10**7,  # 10 MB
+    keepalive_timeout=75
+)
 app.router.add_get('/', handle)
 app.router.add_get('/health', health)
+app.middlewares.append(metrics_middleware)
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
-    web.run_app(app, 
+    web.run_app(
+        app, 
         host='0.0.0.0', 
-        port=port,
+        port=port, 
         access_log_format='%t %a "%r" %s %b "%{User-Agent}i" %D'
     )
