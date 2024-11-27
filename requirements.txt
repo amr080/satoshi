@@ -1,4 +1,2 @@
 aiohttp[speedups]
-uvloop==0.17.0
-cchardet==2.1.7
 aiodns==3.0.0
