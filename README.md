@@ -18,5 +18,11 @@ How does independence work?
 - Each new instance becomes its own server
 - This creates a chain of self-replicating servers
 
+
+Original Server: Deployed by the developer.
+User A's Server: Replicated by User A.
+User B's Server: Replicated by User B.
+
+
 Sources
 - [Quine Computing](https://en.wikipedia.org/wiki/Quine_(computing))
